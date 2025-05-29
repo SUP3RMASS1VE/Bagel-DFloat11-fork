@@ -12,6 +12,7 @@ from torch import nn
 from torch.nn.attention.flex_attention import create_block_mask
 from transformers.configuration_utils import PretrainedConfig
 from transformers.modeling_utils import PreTrainedModel
+from tqdm import tqdm
 
 from data.data_utils import (
     create_sparse_mask, 
@@ -677,7 +678,7 @@ class Bagel(PreTrainedModel):
         dts =  timesteps[:-1] - timesteps[1:]
         timesteps = timesteps[:-1]
 
-        for i, t in enumerate(timesteps):
+        for i, t in tqdm(enumerate(timesteps), desc="Generating image", total=len(timesteps)):
 
             timestep = torch.tensor([t] * x_t.shape[0], device=x_t.device)
             if t > cfg_interval[0] and t <= cfg_interval[1]:
@@ -893,6 +894,10 @@ class Bagel(PreTrainedModel):
         step = 0
         generated_sequence = []
         curr_tokens = packed_start_tokens
+        
+        # Create progress bar for text generation
+        pbar = tqdm(total=max_length, desc="Generating text")
+        
         while step < max_length:
             generated_sequence.append(curr_tokens)
             packed_text_embedding = self.language_model.model.embed_tokens(curr_tokens)
@@ -943,9 +948,15 @@ class Bagel(PreTrainedModel):
             key_values_lens = key_values_lens + 1
             packed_query_position_ids = packed_query_position_ids + 1
             step += 1
+            
+            # Update progress bar
+            pbar.update(1)
 
             if end_token_id is not None and curr_tokens[0] == end_token_id: # only support batch=1
                 break
+        
+        # Close progress bar
+        pbar.close()
 
         output_device = generated_sequence[0].device
         return torch.stack([i.to(output_device) for i in generated_sequence], dim=0)
