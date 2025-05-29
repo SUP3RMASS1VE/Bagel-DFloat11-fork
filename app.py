@@ -3,6 +3,7 @@ import numpy as np
 import os
 import torch
 import random
+from tqdm import tqdm
 
 from accelerate import infer_auto_device_map, dispatch_model, init_empty_weights
 from PIL import Image
@@ -24,6 +25,9 @@ from dfloat11 import DFloat11Model
 # Model Initialization
 model_path = "./BAGEL-7B-MoT-DF11" # Download from https://huggingface.co/DFloat11/BAGEL-7B-MoT-DF11
 
+print("🚀 Initializing BAGEL model...")
+print(f"📁 Model path: {model_path}")
+
 llm_config = Qwen2Config.from_json_file(os.path.join(model_path, "llm_config.json"))
 llm_config.qk_norm = True
 llm_config.tie_word_embeddings = False
@@ -33,8 +37,10 @@ vit_config = SiglipVisionConfig.from_json_file(os.path.join(model_path, "vit_con
 vit_config.rope = False
 vit_config.num_hidden_layers -= 1
 
+print("📦 Loading VAE model...")
 vae_model, vae_config = load_ae(local_path=os.path.join(model_path, "vae/ae.safetensors"))
 
+print("⚙️ Setting up model configuration...")
 config = BagelConfig(
     visual_gen=True,
     visual_und=True,
@@ -47,30 +53,36 @@ config = BagelConfig(
     max_latent_size=64,
 )
 
+print("🏗️ Creating model architecture...")
 with init_empty_weights():
     language_model = Qwen2ForCausalLM(llm_config)
     vit_model      = SiglipVisionModel(vit_config)
     model          = Bagel(language_model, vit_model, config)
     model.vit_model.vision_model.embeddings.convert_conv2d_to_linear(vit_config, meta=True)
 
+print("📝 Loading tokenizer...")
 tokenizer = Qwen2Tokenizer.from_pretrained(model_path)
 tokenizer, new_token_ids, _ = add_special_tokens(tokenizer)
 
+print("🔄 Setting up image transforms...")
 vae_transform = ImageTransform(1024, 512, 16)
 vit_transform = ImageTransform(980, 224, 14)
 
+print("💾 Loading model weights...")
 model = model.to(torch.bfloat16)
 model.load_state_dict({
     name: torch.empty(param.shape, dtype=param.dtype, device='cpu') if param.device.type == 'meta' else param
     for name, param in model.state_dict().items()
 }, assign=True)
 
+print("🔢 Applying DFloat11 quantization...")
 DFloat11Model.from_pretrained(
     model_path,
     bfloat16_model=model,
     device='cpu',
 )
 
+print("🖥️ Setting up device mapping...")
 # Model Loading and Multi GPU Infernece Preparing
 device_map = infer_auto_device_map(
     model,
@@ -104,7 +116,7 @@ else:
 model = dispatch_model(model, device_map=device_map, force_hooks=True)
 model = model.eval()
 
-
+print("🔧 Initializing inferencer...")
 # Inferencer Preparing 
 inferencer = InterleaveInferencer(
     model=model,
@@ -114,6 +126,10 @@ inferencer = InterleaveInferencer(
     vit_transform=vit_transform,
     new_token_ids=new_token_ids,
 )
+
+print("✅ Model initialization completed!")
+print("🎉 Ready to generate images and understand content!")
+print("-" * 50)
 
 def set_seed(seed):
     """Set random seeds for reproducibility"""
@@ -136,6 +152,10 @@ def text_to_image(prompt, show_thinking=False, cfg_text_scale=4.0, cfg_interval=
                  seed=0, image_ratio="1:1"):
     # Set seed for reproducibility
     set_seed(seed)
+    
+    print(f"🎨 Starting text-to-image generation...")
+    print(f"📝 Prompt: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
+    print(f"⚙️ Settings: {num_timesteps} timesteps, CFG scale: {cfg_text_scale}")
 
     if image_ratio == "1:1":
         image_shapes = (1024, 1024)
@@ -164,6 +184,8 @@ def text_to_image(prompt, show_thinking=False, cfg_text_scale=4.0, cfg_interval=
     
     # Call inferencer with or without think parameter based on user choice
     result = inferencer(text=prompt, think=show_thinking, **inference_hyper)
+    
+    print("✅ Image generation completed!")
     return result["image"], result.get("text", None)
 
 
@@ -172,6 +194,9 @@ def image_understanding(image: Image.Image, prompt: str, show_thinking=False,
                         do_sample=False, text_temperature=0.3, max_new_tokens=512):
     if image is None:
         return "Please upload an image."
+
+    print(f"🔍 Starting image understanding...")
+    print(f"❓ Question: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
 
     if isinstance(image, np.ndarray):
         image = Image.fromarray(image)
@@ -188,6 +213,8 @@ def image_understanding(image: Image.Image, prompt: str, show_thinking=False,
     # Use show_thinking parameter to control thinking process
     result = inferencer(image=image, text=prompt, think=show_thinking, 
                         understanding_output=True, **inference_hyper)
+    
+    print("✅ Image understanding completed!")
     return result["text"]
 
 
@@ -202,6 +229,10 @@ def edit_image(image: Image.Image, prompt: str, show_thinking=False, cfg_text_sc
     
     if image is None:
         return "Please upload an image.", ""
+
+    print(f"✏️ Starting image editing...")
+    print(f"📝 Edit instruction: {prompt[:100]}{'...' if len(prompt) > 100 else ''}")
+    print(f"⚙️ Settings: {num_timesteps} timesteps, Text CFG: {cfg_text_scale}, Image CFG: {cfg_img_scale}")
 
     if isinstance(image, np.ndarray):
         image = Image.fromarray(image)
@@ -224,6 +255,8 @@ def edit_image(image: Image.Image, prompt: str, show_thinking=False, cfg_text_sc
     
     # Include thinking parameter based on user choice
     result = inferencer(image=image, text=prompt, think=show_thinking, **inference_hyper)
+    
+    print("✅ Image editing completed!")
     return result["image"], result.get("text", "")
 
 
