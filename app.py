@@ -237,7 +237,7 @@ def load_example_image(image_path):
 
 
 # Gradio UI 
-with gr.Blocks() as demo:
+with gr.Blocks(title="Bagel-DFloat11") as demo:
     gr.Markdown("""
 <div>
   <img src="https://lf3-static.bytednsdoc.com/obj/eden-cn/nuhojubrps/banner.png" alt="BAGEL" width="380"/>
@@ -510,4 +510,4 @@ with gr.Blocks() as demo:
 </div>
 """)
 
-demo.launch(share=True)
+demo.launch(share=False)
