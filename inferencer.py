@@ -4,6 +4,7 @@
 from copy import deepcopy
 from typing import List, Dict, Tuple, Optional, Union, Any
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 from PIL import Image
 import torch
@@ -176,6 +177,7 @@ class InterleaveInferencer:
 
         
     def decode_image(self, latent, image_shape):
+        print("🖼️ Decoding latent to image...")
         H, W = image_shape
         h, w = H // self.model.latent_downsample, W // self.model.latent_downsample
 
@@ -242,7 +244,8 @@ class InterleaveInferencer:
                 gen_context = self.update_context_text(system_prompt, gen_context)
                 cfg_img_context = self.update_context_text(system_prompt, cfg_img_context)
 
-            for input_term in input_lists:
+            # Process inputs with progress bar
+            for input_term in tqdm(input_lists, desc="Processing inputs"):
                 if isinstance(input_term, str):
                     cfg_text_context = deepcopy(gen_context)
                     gen_context = self.update_context_text(input_term, gen_context)
